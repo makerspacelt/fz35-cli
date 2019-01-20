@@ -42,6 +42,14 @@ f_getVolts()    { getData 1 | sed 's/^0\([0-9.]*\)$/\1/'; }
 f_getAmps()     { getData 2; }
 f_getAmpHours() { getData 3; }
 f_getTime()     { getData 4; }
+f_getWatts() {
+	d=$( read_line . | tr -s AVh, ' ' | cut -d' ' -f1,2 )
+	V=$(echo $d | cut -d' ' -f1)
+	A=$(echo $d | cut -d' ' -f2)
+	W=$(bc -l <<< "$V*$A")
+	printf "%.2F\n" $W
+}
+
 f_setAmps() {
 	amps=$(echo "$1" | sed 's/^\([0-9.]*\)A$/\1/')
 	amps=$(printf %.2f $amps)
