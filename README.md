@@ -26,7 +26,7 @@ Any number of commands dan be given to load.sh. Commands will be executed in ord
 * getTime - prints operation time in HH:mm format
 
 * getCsvVoltsAmps - prints volts and amps
-* getCsvRow - print comma separated values of current, voltage and power
+* getCsvRow - print comma separated values of set_current, measured_current, voltage and power
 
 
 ## examples
@@ -46,4 +46,13 @@ In this example
 * `getCsvRow` - prints another csv line with data under load
 * `off` - switches load off for good measure.
 
+
+## examlpe test with graph
+
+```
+./sample_tests/full_range_test.sh > test.csv \
+&& gnuplot sample_plots/single_voltage_current_400x300.gnuuplot > test.png
+```
+
+Output from previous example also can be saved to csv file and used to plot the graph.
 

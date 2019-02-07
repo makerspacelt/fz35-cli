@@ -1,6 +1,6 @@
 #!/bin/bash
 
-./load.sh off slp 0A slp getCsvRow on slp \
+./load.sh off slp setup 0A slp getCsvRow on slp \
 	0.05A slp getCsvRow \
 	0.10A slp getCsvRow \
 	0.15A slp getCsvRow \
