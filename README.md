@@ -56,3 +56,4 @@ In this example
 
 Output from previous example also can be saved to csv file and used to plot the graph.
 
+<img src="media/sample_plot.png"></img>
