@@ -51,7 +51,7 @@ In this example
 
 ```
 ./sample_tests/full_range_test.sh > test.csv \
-&& gnuplot sample_plots/single_voltage_current_400x300.gnuuplot > test.png
+&& ./sample_plots/single_voltage_current_400x300.gnuuplot "title of the test" > test.png
 ```
 
 Output from previous example also can be saved to csv file and used to plot the graph.

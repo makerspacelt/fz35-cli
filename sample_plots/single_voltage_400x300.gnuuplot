@@ -1,3 +1,5 @@
+#!/usr/bin/gnuplot -c
+
 set terminal pngcairo font ",72" fontscale 0.19 size 400, 300 
 # set output 'test.png'
 
@@ -14,6 +16,11 @@ set tmargin 1
 set rmargin 2
 # set bmargin 3
 # set lmargin 5
+
+# title
+set label 1 ARG1
+set label 1 at graph 0.0, 1.05
+
 
 set xrange [ * : * ] noreverse writeback
 set x2range [ * : * ] noreverse writeback
