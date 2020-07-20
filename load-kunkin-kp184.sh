@@ -175,6 +175,29 @@ f_setOhms() {
 
 ## ==== read
 
+
+f_getSetVolts() {
+	value=$(mb_read 0x0112 4)
+	value=$(bc -l <<< "$value / 1000")
+	printf "%.3f\n" $value
+}
+f_getSetAmps() {
+	value=$(mb_read 0x0116 4)
+	value=$(bc -l <<< "$value / 1000")
+	printf "%.3f\n" $value
+}
+f_getSetWatts() {
+	value=$(mb_read 0x011E 4)
+	value=$(bc -l <<< "$value / 100")
+	printf "%.2f\n" $value
+}
+f_getSetOhms() {
+	value=$(mb_read 0x011A 4)
+	value=$(bc -l <<< "$value / 10")
+	printf "%.1f\n" $value
+}
+
+
 #
 #f_getVolts() {
 #	value=$(mb_read 0x0122 4)
