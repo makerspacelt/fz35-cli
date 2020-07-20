@@ -1,10 +1,10 @@
 
 ## usage
 
-Any number of commands dan be given to load.sh. Commands will be executed in order.
+Any number of commands dan be given to load. Commands will be executed in order.
 
 ```
-./load.sh comand [command [command [command] [...]]]
+./load comand [command [command [command] [...]]]
 ```
 
 
@@ -32,7 +32,7 @@ Any number of commands dan be given to load.sh. Commands will be executed in ord
 ## examples
 
 ```
-./load.sh off slp getCsvRow 3.14A on slp getCsvRow off
+./load off slp getCsvRow 3.14A on slp getCsvRow off
 ```
 
 In this example 
