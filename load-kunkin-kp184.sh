@@ -55,8 +55,9 @@ crc16() {
 		then
 			break
 		fi
-
-		table_val="$(echo $table | tr -d "\n\r\t " | cut -d, -f$(( ( ( byte ^ crc ) + 1 ) & 0x00FF  )))"
+		index=$(( ( ( byte ^ crc ) + 1 ) & 0x00FF  ))
+		test $index -eq 0 && index=256
+		table_val="$(echo $table | tr -d "\n\r\t " | cut -d, -f$index)"
 		crc=$(( (crc >> 8) ^ table_val ));
 	done
 
