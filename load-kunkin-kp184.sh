@@ -8,6 +8,8 @@
 HOST="192.168.0.9"
 DEV=""
 
+loadStatusFile='/dev/shm/status'
+rm -f $loadStatusFile
 
 crc16() {
 	table="
@@ -124,6 +126,15 @@ setup() {
 
 ## ==== write
 
+
+f_on() {
+	mb_write_one 0x010e 1
+}
+f_off() {
+	mb_write_one 0x010e 0
+}
+
+
 f_setMode() {
 	case $1 in
 		CC) mode=1 ;;
@@ -133,6 +144,7 @@ f_setMode() {
 	esac
 	mb_write_one 0x110 $mode
 }
+
 
 f_setVolts() {
 	f_setMode CV
@@ -160,50 +172,91 @@ f_setOhms() {
 }
 
 
-f_on() {
-	mb_write_one 0x010e 1
-}
-f_off() {
-	mb_write_one 0x010e 0
-}
-
-
 ## ==== read
 
-f_getVolts() {
-	value=$(mb_read 0x0122 4)
-	value=$(bc -l <<< "$value / 1000")
-	printf "%.3f\n" $value
-}
-f_getAmps() {
-	value=$(mb_read 0x0126 4)
-	value=$(bc -l <<< "$value / 1000")
-	printf "%.3f\n" $value
-}
+#
+#f_getVolts() {
+#	value=$(mb_read 0x0122 4)
+#	value=$(bc -l <<< "$value / 1000")
+#	printf "%.3f\n" $value
+#}
+#f_getAmps() {
+#	value=$(mb_read 0x0126 4)
+#	value=$(bc -l <<< "$value / 1000")
+#	printf "%.3f\n" $value
+#}
 
 ## ==== status
 
-f_getMode() {
-	value=$(mb_read_raw 0x0300 0 \
-		| od -v -j3 -N1 -w2 -t u2 \
-		| awk '{print $2}' \
+
+getStatus() {
+	if [ ! -f "$loadStatusFile" ]
+	then
+		mb_read_raw 0x0300 0 \
+		| od -v -j3 -w1 -t u1 \
+		| awk '{print $2" "}' \
 		| tr -d '\r\n' \
-	)
-	echo -n C
-	echo $(( (value >> 1) + 5)) | tr '6587' 'CVWR'
+		> $loadStatusFile
+	fi
+	cat $loadStatusFile
 }
+f_getStatus() {	getStatus; }
+
 f_isOn() {
-	value=$(mb_read_raw 0x0300 0 \
-	| od -v -j3 -N1 -w2 -t u2 \
-	| awk '{print $2}' \
-	| tr -d '\r\n' \
-	)
+	value=$(getStatus | cut -d' ' -f1)
 	test $((value & 1)) -eq 1 && echo true || echo false
+}
+f_getMode() {
+	value=$(getStatus | cut -d' ' -f1)
+	echo -n C
+	echo $(( (value >> 1) + 1 )) | tr '6587' 'CVWR'
+}
+f_getVolts() {
+	b1=$(getStatus | cut -d' ' -f3)
+	b2=$(getStatus | cut -d' ' -f4)
+	b3=$(getStatus | cut -d' ' -f5)
+	value=$(echo "($b1*256*256 + $b2*256 + $b3) /1000" | bc -l)
+	printf "%.3f\n" "$value"
+}
+f_getAmps() {
+	b1=$(getStatus | cut -d' ' -f6)
+	b2=$(getStatus | cut -d' ' -f7)
+	b3=$(getStatus | cut -d' ' -f8)
+	value=$(echo "($b1*256*256 + $b2*256 + $b3) /1000" | bc -l)
+	printf "%.3f\n" "$value"
+}
+f_getWatts() {
+	volts=$(f_getVolts)
+	amps=$(f_getAmps)
+	value=$(echo "$volts*$amps" | bc -l)
+	printf "%.3f\n" "$value"
+}
+f_getLimit() {
+	b1=$(getStatus | cut -d' ' -f9)
+	b2=$(getStatus | cut -d' ' -f10)
+	b3=$(getStatus | cut -d' ' -f11)
+	case $(f_getMode) in
+	CC)
+		printf "%.3f\n" $(echo "($b1*256*256 + $b2*256 + $b3) /1000" | bc -l)
+		;;
+	CV)
+		printf "%.3f\n" $(echo "($b1*256*256 + $b2*256 + $b3) /1000" | bc -l)
+		;;
+	CW)
+		printf "%.2f\n" $(echo "($b1*256*256 + $b2*256 + $b3) /100" | bc -l)
+		;;
+	CR)
+		printf "%.1f\n" $(echo "($b1*256*256 + $b2*256 + $b3) /10" | bc -l)
+		;;
+	esac
 }
 
 ## ==== high level stuff
 
-f_slp()   { sleep 1; }
+f_slp() {
+	rm -f $loadStatusFile
+	sleep 1
+}
 
 
 for f in "$@"
@@ -240,4 +293,7 @@ do
 
 	"f_$f" $val
 done
+
+
+
 
