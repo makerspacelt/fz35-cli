@@ -212,17 +212,22 @@ f_getSetOhms() {
 
 ## ==== status
 
-
 getStatus() {
 	if [ ! -f "$loadStatusFile" ]
 	then
-		mb_read_raw 0x0300 0 \
+		mb_read_raw 0x0301 0 \
 		| od -v -j3 -w1 -t u1 \
 		| awk '{print $2" "}' \
 		| tr -d '\r\n' \
 		> $loadStatusFile
 	fi
-	cat $loadStatusFile
+	if [ $(cat $loadStatusFile | wc -c) -lt 50 ]
+	then
+		rm "$loadStatusFile"
+		getStatus
+	else
+		cat $loadStatusFile
+	fi
 }
 f_getStatus() {	getStatus; }
 
@@ -235,6 +240,16 @@ f_getMode() {
 	echo -n C
 	echo $(( (value >> 1) + 1 )) | tr '6587' 'CVWR'
 }
+f_getFunc() {
+	value=$(getStatus | cut -d' ' -f2)
+
+	test $((value&255)) -eq '0' && echo none
+	test $((value&4)) -ne '0' && echo bat
+	test $((value&8)) -ne '0' && echo dyn
+	test $((value&32)) -ne '0' && echo cop
+	test $((value&64)) -ne '0' && echo oct
+}
+
 f_getVolts() {
 	b1=$(getStatus | cut -d' ' -f3)
 	b2=$(getStatus | cut -d' ' -f4)
@@ -254,6 +269,22 @@ f_getWatts() {
 	amps=$(f_getAmps)
 	value=$(echo "$volts*$amps" | bc -l)
 	printf "%.3f\n" "$value"
+}
+f_getAH() {
+	b1=$(getStatus | cut -d' ' -f25)
+	b2=$(getStatus | cut -d' ' -f26)
+	b3=$(getStatus | cut -d' ' -f27)
+	b4=$(getStatus | cut -d' ' -f28)
+	value=$(echo "($b1*256*256*256 + $b2*256*256 + $b3*256 + $b4) /60/60/1000" | bc -l)
+	printf "%.6f\n" "$value"
+}
+f_getWH() {
+	b1=$(getStatus | cut -d' ' -f29)
+	b2=$(getStatus | cut -d' ' -f30)
+	b3=$(getStatus | cut -d' ' -f31)
+	b4=$(getStatus | cut -d' ' -f32)
+	value=$(echo "($b1*256*256*256 + $b2*256*256 + $b3*256 + $b4) /60/60/1000" | bc -l)
+	printf "%.6f\n" "$value"
 }
 f_getLimit() {
 	b1=$(getStatus | cut -d' ' -f9)
