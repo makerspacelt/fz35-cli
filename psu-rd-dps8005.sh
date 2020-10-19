@@ -5,7 +5,7 @@
 # Tested on DPS8005 via esp-link on esp-01s
 #
 
-HOST="psu.lan"
+: "${HOST:=psu.lan}"
 DEV=""
 
 
