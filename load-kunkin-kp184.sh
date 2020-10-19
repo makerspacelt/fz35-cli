@@ -5,7 +5,7 @@
 # Tested on KP184 via esp-link on esp-01s
 #
 
-HOST="192.168.0.9"
+: "${HOST:=load400.lan}"
 DEV=""
 
 loadStatusFile='/dev/shm/status'
@@ -118,7 +118,7 @@ mb_write_one() {
 	)
 
 	msg="\x06$address\x00\x01\x04$value"
-	mb_send "$msg" 1
+	mb_send "$msg" 1 >/dev/null
 }
 
 setup() {
