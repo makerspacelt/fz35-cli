@@ -146,12 +146,33 @@ f_setMode() {
 	mb_write_one 0x110 $mode
 }
 
+f_setFunc() {
+	param=$(echo $1 | tr '[:lower:]' '[:upper:]')
+	case $param in
+		DYN) dyn=1 ;;
+		BAT) bat=1 ;;
+		COP) cop=1 ;;
+		OCT) oct=1 ;;
+	esac
+	mb_write_one 0x0132 ${dyn:0}
+	mb_write_one 0x0144 ${bat:0}
+	mb_write_one 0x0180 ${cop:0}
+	mb_write_one 0x0190 ${oct:0}
+}
+f_clearAH() {
+	mb_write_one 0x0148 0
+}
+f_clearWH() {
+	f_clearAH
+}
+
 
 f_setVolts() {
 	f_setMode CV
 	val=$(echo $1 | tr -d 'CVv')
 	val=$(bc -l <<< "$val * 1000" | cut -d. -f1)
-	mb_write_one 0x0112 $val
+	mb_write_one 0x0112 $val # normal volts for CV
+	mb_write_one 0x0146 $val # bat cut off voltage
 }
 f_setAmps() {
 	f_setMode CC
@@ -170,6 +191,12 @@ f_setOhms() {
 	val=$(echo $1 | tr -d 'CRr')
 	val=$(bc -l <<< "$val * 10" | cut -d. -f1)
 	mb_write_one 0x011A $val
+}
+f_setBatVolts() {
+	f_setFunc BAT
+	val=$(echo $1 | tr -d 'Vv')
+	val=$(bc -l <<< "$val * 1000" | cut -d. -f1)
+	mb_write_one 0x0146 $val # bat cut off voltage
 }
 
 
@@ -195,6 +222,11 @@ f_getSetOhms() {
 	value=$(mb_read 0x011A 4)
 	value=$(bc -l <<< "$value / 10")
 	printf "%.1f\n" $value
+}
+f_getSetBatVolts() {
+	value=$(mb_read 0x0146 4)
+	value=$(bc -l <<< "$value / 1000")
+	printf "%.3f\n" $value
 }
 
 
