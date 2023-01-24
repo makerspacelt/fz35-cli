@@ -5,11 +5,13 @@
 # Tested on KP184 via esp-link on esp-01s
 #
 
-: "${HOST:=load400.lan}"
+: "${HOST:=load1.lan}"
 DEV=""
 
 loadStatusFile='/dev/shm/status'
 rm -f $loadStatusFile
+
+crc_reverse="false"
 
 crc16() {
 	table="
@@ -61,7 +63,12 @@ crc16() {
 		crc=$(( (crc >> 8) ^ table_val ));
 	done
 
-	printf "\\\x%02x\\\x%02x\n" $(( crc >> 8 )) $(( crc & 0x00FF ))
+	if [ "$crc_reverse" == "true" ]
+	then
+		printf "\\\x%02x\\\x%02x\n" $(( crc & 0x00FF )) $(( crc >> 8 ))
+	else
+		printf "\\\x%02x\\\x%02x\n" $(( crc >> 8 )) $(( crc & 0x00FF ))
+	fi
 }
 
 
@@ -121,9 +128,6 @@ mb_write_one() {
 	mb_send "$msg" 1 >/dev/null
 }
 
-setup() {
-	:
-}
 
 ## ==== write
 
@@ -203,6 +207,11 @@ f_setBatVolts() {
 ## ==== read
 
 
+f_getVersion() {
+	value=$(mb_read 0x0001 4)
+	printf "%s\n" $value
+}
+
 f_getSetVolts() {
 	value=$(mb_read 0x0112 4)
 	value=$(bc -l <<< "$value / 1000")
@@ -228,7 +237,6 @@ f_getSetBatVolts() {
 	value=$(bc -l <<< "$value / 1000")
 	printf "%.3f\n" $value
 }
-
 
 #
 #f_getVolts() {
@@ -345,6 +353,14 @@ f_slp() {
 	sleep 1
 }
 
+setup() {
+	if f_getVersion 2>/dev/null | fgrep -vq 1840
+	then
+		crc_reverse="true"
+	fi
+}
+
+setup
 
 for f in "$@"
 do
