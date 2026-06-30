@@ -6,12 +6,13 @@
 #
 
 : "${HOST:=load1.lan}"
+: "${LOG:=LOGW}"
 DEV=""
 
-loadStatusFile='/dev/shm/status'
-rm -f $loadStatusFile
+MAX_RETRY_TIMES=5
 
-crc_reverse="false"
+loadStatusFile="/dev/shm/status-$HOST"
+rm -f $loadStatusFile
 
 crc16() {
 	table="
@@ -71,15 +72,40 @@ crc16() {
 	fi
 }
 
+bin2hex() {
+	if [ -t 0 ]; then
+		# process args
+		echo -n "$@" | xxd -p | tr -d ' \n' | sed 's/\(..\)/\\x\1/g'
+	else
+		# process stdin
+		xxd -p | tr -d ' \n' | sed 's/\(..\)/\\x\1/g'
+	fi
+}
 
 
+
+LOG()  {
+	echo 'LOGD LOGV LOGI LOGW LOGE LOGF' | grep -o "$LOG.*" | grep -q ${FUNCNAME[1]} && \
+	echo -e "$1 ${FUNCNAME[5]} -> ${FUNCNAME[4]} -> ${FUNCNAME[3]} -> ${FUNCNAME[2]}:\033[0m ${@:2}" >&2
+}
+LOGD() { LOG "\033[1;37m[D]" $@; }
+LOGV() { LOG "\033[1;32m[D]" $@; }
+LOGI() { LOG "\033[1;36m[I]" $@; }
+LOGW() { LOG "\033[1;33m[W]" $@; }
+LOGE() { LOG "\033[1;31m[E]" $@; }
+LOGF() { LOG "\033[1;35m[F]" $@; }
 
 
 mb_send() {
 	msg="\x01$1"
 	crc=$(echo -ne "$msg" | crc16)
 	msg="$msg$crc"
-	echo -ne $msg | nc -q$2 -w1 $HOST 23 2>/dev/null
+	# timeout 1.1 - mostly zero errors - retry rate 0.33%
+	# timeout 0.3 - fastet(+60%) on average - retry rate 13.6%
+	val="$(echo -ne $msg | timeout 1.1 nc -q$2 -w2 $HOST 23 2>/dev/null | bin2hex)"
+	echo -ne "$val"
+	LOGD "SEND($(echo -ne $msg| wc -c)): ${msg//\\x/\\\\\x}"
+	LOGD "GET($( echo -ne $val| wc -c)): ${val//\\x/\\\\\x}"
 	sleep 0.01
 }
 
@@ -99,10 +125,12 @@ mb_read() {
 	count="$2"
 	bytes_to_read=$(( count * 2 ))
 
-	mb_read_raw $address $count	\
+	val="$(mb_read_raw $address $count	\
 		| od -v -j3 -N$bytes_to_read -w4 -t u4 --endian=big \
 		| awk '{print $2}' \
-		| head -n1 | tr "\n\r" ' '
+		| head -n1 | tr "\n\r" ' ' \
+	)"
+	test -n "$val" && echo "$val" || echo "-1000"
 }
 
 mb_read_one() {
@@ -113,6 +141,7 @@ mb_write_one() {
 	address="$1"
 	value="$2"
 
+	LOGD "addr($address) value($value)"
 	address=$( printf "\\\x%02x\\\x%02x" \
 		$(( address >> 8 )) \
 		$(( address & 0x00FF )) \
@@ -126,28 +155,48 @@ mb_write_one() {
 
 	msg="\x06$address\x00\x01\x04$value"
 	mb_send "$msg" 1 >/dev/null
+	dropCache
 }
 
+with_retry() {
+	run="$1"
+	check="$2"
+	expect="$3"
+
+	LOGD " run($run) check($check) expect($expect)' executing;"
+
+	for retry in $(seq 1 $MAX_RETRY_TIMES); do
+		$run
+		val="$($check)"
+		if [ "$expect" == "$val" ]; then
+			return
+		fi
+		LOGW "failed, val($val) does not match expected($expect); retrying($retry);"
+		sleep 2
+	done
+	LOGE "failed after $MAX_RETRY_TIMES tries;"
+}
 
 ## ==== write
 
-
 f_on() {
-	mb_write_one 0x010e 1
+	with_retry "mb_write_one 0x010e 1" "f_isOn" "true"
 }
 f_off() {
-	mb_write_one 0x010e 0
+	with_retry "mb_write_one 0x010e 0" "f_isOn" "false"
 }
 
 
 f_setMode() {
-	case $1 in
+	param=$(echo $1 | tr '[:lower:]' '[:upper:]')
+	case $param in
 		CC) mode=1 ;;
 		CV) mode=0 ;;
 		CW) mode=3 ;;
 		CR) mode=2 ;;
+		*)  mode=1 ;;
 	esac
-	mb_write_one 0x110 $mode
+	with_retry "mb_write_one 0x0110 $mode" "f_getMode" "$1"
 }
 
 f_setFunc() {
@@ -181,8 +230,9 @@ f_setVolts() {
 f_setAmps() {
 	f_setMode CC
 	val=$(echo $1 | tr -d 'CAa')
+	check=$(printf "%.3f\n" $val)
 	val=$(bc -l <<< "$val * 1000" | cut -d. -f1)
-	mb_write_one 0x0116 $val
+	with_retry "mb_write_one 0x0116 $val" "f_getSetAmps" "$check"
 }
 f_setWatts() {
 	f_setMode CW
@@ -252,6 +302,9 @@ f_getSetBatVolts() {
 
 ## ==== status
 
+dropCache() {
+	rm -f $loadStatusFile
+}
 getStatus() {
 	if [ ! -f "$loadStatusFile" ]
 	then
@@ -263,6 +316,8 @@ getStatus() {
 	fi
 	if [ $(cat $loadStatusFile | wc -c) -lt 50 ]
 	then
+		LOGW retry
+		sleep 2
 		rm "$loadStatusFile"
 		getStatus
 	else
@@ -357,6 +412,8 @@ setup() {
 	if f_getVersion 2>/dev/null | fgrep -vq 1840
 	then
 		crc_reverse="true"
+	else
+		crc_reverse="false"
 	fi
 }
 
