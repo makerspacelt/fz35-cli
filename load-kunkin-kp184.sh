@@ -86,7 +86,7 @@ bin2hex() {
 
 LOG()  {
 	echo 'LOGD LOGV LOGI LOGW LOGE LOGF' | grep -o "$LOG.*" | grep -q ${FUNCNAME[1]} && \
-	echo -e "$1 ${FUNCNAME[5]} -> ${FUNCNAME[4]} -> ${FUNCNAME[3]} -> ${FUNCNAME[2]}:\033[0m ${@:2}" >&2
+	echo -e "$HOST $1 ${FUNCNAME[5]} -> ${FUNCNAME[4]} -> ${FUNCNAME[3]} -> ${FUNCNAME[2]}:\033[0m ${@:2}" >&2
 }
 LOGD() { LOG "\033[1;37m[D]" $@; }
 LOGV() { LOG "\033[1;32m[D]" $@; }
@@ -317,7 +317,7 @@ getStatus() {
 	if [ $(cat $loadStatusFile | wc -c) -lt 50 ]
 	then
 		LOGW retry
-		sleep 2
+		setup
 		rm "$loadStatusFile"
 		getStatus
 	else
@@ -409,14 +409,22 @@ f_slp() {
 }
 
 setup() {
-	if f_getVersion 2>/dev/null | fgrep -vq 1840
-	then
-		crc_reverse="true"
-	else
-		crc_reverse="false"
-	fi
-}
 
+	crc_reverse="false"
+	if f_getVersion 2>/dev/null | fgrep -q 1840
+	then
+		return
+	fi
+
+	crc_reverse="true"
+	if f_getVersion 2>/dev/null | fgrep -q 1840
+	then
+		return
+	fi
+
+	LOGW CRC order not confirmed. retrying
+	setup
+}
 setup
 
 for f in "$@"
