@@ -167,6 +167,7 @@ with_retry() {
 
 	for retry in $(seq 1 $MAX_RETRY_TIMES); do
 		$run
+		sleep 0.01
 		val="$($check)"
 		if [ "$expect" == "$val" ]; then
 			return

@@ -6,8 +6,10 @@
 #
 
 : "${HOST:=psu.lan}"
+: "${LOG:=LOGW}"
 DEV=""
 
+MAX_RETRY_TIMES=5
 
 crc16() {
 	table="
@@ -62,16 +64,50 @@ crc16() {
 	printf "\\\x%02x\\\x%02x\n" $(( crc & 0x00FF )) $(( crc >> 8 ))
 }
 
+bin2hex() {
+	if [ -t 0 ]; then
+		# process args
+		echo -n "$@" | xxd -p | tr -d ' \n' | sed 's/\(..\)/\\x\1/g'
+	else
+		# process stdin
+		xxd -p | tr -d ' \n' | sed 's/\(..\)/\\x\1/g'
+	fi
+}
 
 
+
+LOG()  {
+	echo 'LOGD LOGV LOGI LOGW LOGE LOGF' | grep -o "$LOG.*" | grep -q ${FUNCNAME[1]} && \
+	echo -e "$HOST $1 ${FUNCNAME[5]} -> ${FUNCNAME[4]} -> ${FUNCNAME[3]} -> ${FUNCNAME[2]}:\033[0m ${@:2}" >&2
+}
+LOGD() { LOG "\033[1;37m[D]" $@; }
+LOGV() { LOG "\033[1;32m[D]" $@; }
+LOGI() { LOG "\033[1;36m[I]" $@; }
+LOGW() { LOG "\033[1;33m[W]" $@; }
+LOGE() { LOG "\033[1;31m[E]" $@; }
+LOGF() { LOG "\033[1;35m[F]" $@; }
 
 
 mb_send() {
 	msg="\x01$1"
 	crc=$(echo -ne "$msg" | crc16)
 	msg="$msg$crc"
-	echo -ne $msg | nc -q$2 -w1 $HOST 23
-	sleep 0.5
+	val="$(echo -ne $msg | timeout 1.5 nc -q$2 -w2 $HOST 23 2>/dev/null | bin2hex)"
+	echo -ne "$val"
+	LOGD "SEND($(echo -ne $msg| wc -c)): ${msg//\\x/\\\\\x}"
+	LOGD "GET($( echo -ne $val| wc -c)): ${val//\\x/\\\\\x}"
+	sleep 0.01
+}
+
+mb_read_raw() {
+	address="$1"
+	count="$2"
+
+	address=$( printf "\\\x%02x\\\x%02x" $(( address >> 8 )) $(( address & 0x00FF )) )
+	count=$( printf "\\\x%02x\\\x%02x" $(( count >> 8 )) $(( count & 0x00FF )) )
+
+	msg="\x03$address$count"
+	mb_send "$msg" -1
 }
 
 mb_read() {
@@ -79,11 +115,23 @@ mb_read() {
 	count="$2"
 	bytes_to_read=$(( count * 2 ))
 
-	address=$( printf "\\\x%02x\\\x%02x" $(( address >> 8 )) $(( address & 0x00FF )) )
-	count=$( printf "\\\x%02x\\\x%02x" $(( count >> 8 )) $(( count & 0x00FF )) )
 
-	msg="\x03$address$count"
-	mb_send "$msg" -1 | od -v -j3 -N$bytes_to_read -w2 -t u2 --endian=big | awk '{print $2}' | tr "\n\r" ' '
+	for retry in $(seq 1 $MAX_RETRY_TIMES); do
+		val="$(mb_read_raw $address $count \
+			| od -v -j3 -N$bytes_to_read -w2 -t u2 --endian=big 2>/dev/null \
+			| awk '{print $2}' \
+			| head -n1 | tr "\n\r" ' ' \
+		)"
+
+		if [ -n "$val" ]; then
+			echo "$val"
+			return
+		fi
+		LOGW "failed read, val($val); retrying($retry);"
+		sleep 2
+	done
+	LOGE "failed read after $MAX_RETRY_TIMES tries;"
+	echo "-32323"
 }
 
 mb_read_one() {
@@ -94,36 +142,60 @@ mb_write_one() {
 	address="$1"
 	value="$2"
 
+	LOGD "addr($address) value($value)"
 	address=$( printf "\\\x%02x\\\x%02x" $(( address >> 8 )) $(( address & 0x00FF )) )
 	value=$( printf "\\\x%02x\\\x%02x" $(( value >> 8 )) $(( value & 0x00FF )) )
 
 	msg="\x06$address$value"
-	mb_send "$msg" 1
+	mb_send "$msg" 1 >/dev/null
+}
+
+with_retry() {
+	run="$1"
+	check="$2"
+	expect="$3"
+
+	LOGD " run($run) check($check) $comp expect($expect)' executing;"
+
+	for retry in $(seq 1 $MAX_RETRY_TIMES); do
+		$run
+		sleep 0.5
+		val="$($check)"
+		if [ "$expect" == "$val" ]; then
+			return
+		fi
+		LOGW "failed match, val($val) $comp expected($expect); retrying($retry);"
+		sleep 2
+	done
+	LOGE "failed after $MAX_RETRY_TIMES tries;"
 }
 
 ## ==== write
 
 f_setVolts() {
 	val=$(echo $1 | tr -d 'Vv')
+	check=$(printf "%.2f\n" $val)
 	val=$(bc -l <<< "$val * 100" | cut -d. -f1)
-	mb_write_one 0x00 $val 
+	with_retry "mb_write_one 0x00 $val" "f_getLimitVolts" "$check"
 }
 f_setAmps() {
 	val=$(echo $1 | tr -d 'Aa')
+	check=$(printf "%.3f\n" $val)
 	val=$(bc -l <<< "$val * 1000" | cut -d. -f1)
-	mb_write_one 0x01 $val 
+	with_retry "mb_write_one 0x01 $val" "f_getLimitAmps" "$check"
 }
 f_lock() {
-	mb_write_one 0x06 1
+	with_retry "mb_write_one 0x06 1" "f_isLocked" "1"
 }
 f_unlock() {
-	mb_write_one 0x06 0
+	with_retry "mb_write_one 0x06 0" "f_isLocked" "0"
 }
 f_on() {
-	mb_write_one 0x09 1
+	with_retry "mb_write_one 0x09 1" "f_isOn" "1"
 }
 f_off() {
-	mb_write_one 0x09 0
+	with_retry "mb_write_one 0x09 0" "f_isOn" "0"
+
 }
 
 
